@@ -12,7 +12,7 @@ La página es solo informativa: no tiene formularios, registro de usuarios ni ba
 index.html        Contenido de la página
 css/styles.css    Estilos (colores, diseño, celular)
 js/script.js      Menú desplegable para celular
-logo.png          Logo del CGBVP (debes agregarlo en esta carpeta)
+logo.svg          Logo del CGBVP (debes agregarlo en esta carpeta)
 ```
 
 ## Cómo editar los textos
@@ -32,7 +32,7 @@ Están al inicio de `css/styles.css`, en `:root`: rojo `#C8102E`, dorado `#F2C20
 
 ## Logo
 
-Coloca el archivo `logo.png` en la raíz del proyecto (junto a `index.html`). Si no existe, la página simplemente no lo muestra.
+Coloca el archivo `logo.svg` en la raíz del proyecto (junto a `index.html`). Si no existe, la página simplemente no lo muestra.
 
 ## Ver la página en tu computadora
 
