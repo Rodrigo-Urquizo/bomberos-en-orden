@@ -69,6 +69,9 @@ h3 { color: var(--rojo); margin: 0 0 8px; }
 /* Pie */
 .pie { background: var(--rojo); color: #fff; text-align: center; padding: 24px 0; border-top: 4px solid var(--dorado); }
 .pie p { margin: 4px 0; }
+.pie-acceso { margin-top: 14px !important; font-size: 0.9rem; }
+.pie-acceso a { color: #fff; opacity: 0.85; text-decoration: underline; text-underline-offset: 3px; }
+.pie-acceso a:hover, .pie-acceso a:focus { opacity: 1; color: var(--dorado); }
 
 /* Celular */
 @media (max-width: 700px) {

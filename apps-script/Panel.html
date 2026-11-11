@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <!-- Los enlaces abren en la ventana completa, no dentro del marco de Google -->
+  <base target="_top">
+  <meta charset="UTF-8">
+  <meta name="robots" content="noindex, nofollow">
+  <?!= incluir('Estilos'); ?>
+</head>
+<body>
+
+  <header class="barra">
+    <div>
+      <p class="barra-sup">Uso interno · Área común de emergencias</p>
+      <h1>Panel de inventario</h1>
+    </div>
+    <div class="barra-estado">
+      <p class="reloj" id="reloj">--:--</p>
+      <p class="sincro" id="sincro"><span class="sincro-punto"></span><span id="sincro-texto">Cargando…</span></p>
+    </div>
+  </header>
+
+  <p class="aviso-demo" id="aviso-demo" hidden>
+    Vista previa local con datos de ejemplo. Publicado en Google, el panel lee la hoja real.
+  </p>
+
+  <section class="bloqueo" id="bloqueo" hidden>
+    <div class="bloqueo-caja">
+      <p class="bloqueo-icono" aria-hidden="true">🔒</p>
+      <h2>Acceso restringido</h2>
+      <p id="bloqueo-texto">Tu cuenta no tiene permiso para ver el inventario.</p>
+      <p>Pide al encargado del inventario que comparta la hoja con tu correo y vuelve a cargar esta página.</p>
+      <a class="bloqueo-enlace" href="https://rodrigo-urquizo.github.io/bomberos-en-orden/">Volver a la página de la compañía</a>
+    </div>
+  </section>
+
+  <main class="contenido" id="contenido">
+
+    <section class="kpis" aria-label="Resumen del inventario">
+      <div class="kpi">
+        <p class="kpi-valor" id="kpi-items">–</p>
+        <p class="kpi-etiqueta">Ítems registrados</p>
+      </div>
+      <div class="kpi">
+        <p class="kpi-valor" id="kpi-unidades">–</p>
+        <p class="kpi-etiqueta">Unidades en stock</p>
+      </div>
+      <div class="kpi kpi--aviso">
+        <p class="kpi-valor" id="kpi-por-vencer">–</p>
+        <p class="kpi-etiqueta">Lotes por vencer (<span id="kpi-meses">6</span> meses)</p>
+      </div>
+      <div class="kpi kpi--peligro">
+        <p class="kpi-valor" id="kpi-peligro">–</p>
+        <p class="kpi-etiqueta">Ítems vencidos o agotados</p>
+      </div>
+    </section>
+
+    <section aria-labelledby="titulo-vencimientos">
+      <h2 class="seccion-titulo" id="titulo-vencimientos">Próximos vencimientos</h2>
+      <ol class="venc-lista" id="venc-lista"></ol>
+    </section>
+
+    <section class="controles" aria-label="Filtros">
+      <input class="buscar" type="search" id="buscar" placeholder="Buscar insumo…" aria-label="Buscar insumo" autocomplete="off">
+      <div class="chips" id="chips" role="group" aria-label="Filtrar por andamio"></div>
+      <label class="interruptor"><input type="checkbox" id="solo-alertas"> Solo con alertas</label>
+    </section>
+
+    <section class="andamios" id="andamios"></section>
+
+  </main>
+
+  <footer class="pie">
+    <span id="usuario"></span>
+    Se actualiza cada <span id="intervalo">60</span> segundos ·
+    <a href="https://rodrigo-urquizo.github.io/bomberos-en-orden/">Página de la compañía</a>
+  </footer>
+
+  <?!= incluir('Script'); ?>
+</body>
+</html>

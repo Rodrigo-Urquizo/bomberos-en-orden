@@ -1,0 +1,476 @@
+<script>
+// Panel interno de inventario
+// Pide las filas de la hoja a Codigo.js (con los permisos de quien abre el panel)
+// y se actualiza solo cada cierto tiempo.
+
+const CONFIG = {
+  // Cada cuántos segundos se vuelve a leer la hoja.
+  intervaloSegundos: 60,
+
+  // Con cuántos días de anticipación se avisa que un lote está por vencer.
+  diasAviso: 180,
+};
+
+// Datos ficticios solo para la vista previa fuera de Google (el inventario real es privado).
+const DATOS_DEMO = [
+  ['Andamio', 'Categoría', 'Artículo', 'Unidad de medida', 'Contenido', 'Cantidad', 'Fecha de expiración', 'Talla'],
+  ['Médico 1', '', 'Mascarillas KN95', 'Caja', '20 unid.', '30', '-', '-'],
+  ['Médico 1', '', 'Guantes de nitrilo', 'Caja', '100 unid.', '0', '-', 'M'],
+  ['Médico 1', '', 'Gasas estériles', '', '1 unid.', '120', 'feb-27', '-'],
+  ['Médico 2', '', 'Cloruro de sodio 0.9%', 'L', '1', '8', 'oct-26', '-'],
+  ['Médico 2', '', 'Cloruro de sodio 0.9%', 'L', '1', '15', 'jun-28', '-'],
+  ['Limpieza', '', 'Lejía', 'L', '4', '10', '', ''],
+  ['Bebidas', '', 'Agua', 'L', '20', '6', '', ''],
+];
+
+const MESES = {
+  ene: 0, jan: 0, feb: 1, mar: 2, abr: 3, apr: 3, may: 4, jun: 5,
+  jul: 6, ago: 7, aug: 7, sep: 8, set: 8, oct: 9, nov: 10, dic: 11, dec: 11,
+};
+
+const ESTADOS = {
+  agotado:      { texto: 'Agotado',      nivel: 'peligro' },
+  vencido:      { texto: 'Lote vencido', nivel: 'peligro' },
+  'por-vencer': { texto: 'Por vencer',   nivel: 'aviso' },
+  bajo:         { texto: 'Stock bajo',   nivel: 'aviso' },
+  ok:           { texto: 'En stock',     nivel: 'ok' },
+};
+
+const estado = {
+  items: [],
+  filtro: { texto: '', andamio: 'todos', soloAlertas: false },
+  ultimaCarga: null,
+  error: null,
+  sinAcceso: false,
+  usuario: '',
+  andamiosPintados: '',
+};
+
+const $ = (id) => document.getElementById(id);
+const enGoogle = typeof google !== 'undefined' && google.script && google.script.run;
+
+// ---------- Utilidades ----------
+
+function normalizar(texto) {
+  return String(texto ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim();
+}
+
+function escapar(texto) {
+  return String(texto ?? '').replace(/[&<>"']/g, (c) => (
+    { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
+  ));
+}
+
+// En la hoja, "-" significa "no aplica".
+function limpiar(valor) {
+  const texto = String(valor ?? '').trim();
+  return texto === '-' || texto === '—' ? '' : texto;
+}
+
+function leerNumero(valor) {
+  const n = parseFloat(String(valor).replace(/\s/g, '').replace(',', '.'));
+  return Number.isFinite(n) ? n : 0;
+}
+
+const formatoNumero = new Intl.NumberFormat('es-PE');
+const formatoMes = new Intl.DateTimeFormat('es-PE', { month: 'short', year: 'numeric' });
+const formatoHora = new Intl.DateTimeFormat('es-PE', { hour: '2-digit', minute: '2-digit' });
+const formatoHoraSeg = new Intl.DateTimeFormat('es-PE', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+
+// ---------- Lectura de la hoja ----------
+
+// Las columnas se reconocen por su nombre, así que el orden en la hoja puede cambiar.
+// "minimo" va primero para que "Cantidad mínima" no se confunda con "Cantidad".
+const COLUMNAS = {
+  minimo: (n) => n.includes('minim'),
+  andamio: (n) => n.startsWith('andamio') || n.startsWith('ubicacion'),
+  categoria: (n) => n.startsWith('categoria'),
+  articulo: (n) => n.startsWith('articulo') || n.startsWith('insumo') || n.startsWith('producto'),
+  unidad: (n) => n.startsWith('unidad'),
+  contenido: (n) => n.startsWith('contenido'),
+  cantidad: (n) => n.startsWith('cantidad') || n === 'stock',
+  vencimiento: (n) => n.includes('expir') || n.includes('venc'),
+  talla: (n) => n.startsWith('talla'),
+};
+
+function mapearColumnas(encabezados) {
+  const indices = {};
+  encabezados.forEach((encabezado, i) => {
+    const n = normalizar(encabezado);
+    for (const [clave, coincide] of Object.entries(COLUMNAS)) {
+      if (!(clave in indices) && coincide(n)) { indices[clave] = i; break; }
+    }
+  });
+  return indices;
+}
+
+// Acepta "sep-27", "sept. 2027", "01/09/2027", "2027-09-01", "09/2027".
+// Si solo hay mes y año, se toma el último día de ese mes.
+function leerFecha(texto) {
+  const t = normalizar(texto).replace(/\./g, '');
+  if (!t) return null;
+
+  const anio = (s) => (s.length === 2 ? 2000 + Number(s) : Number(s));
+  const finDeMes = (a, m) => new Date(a, m + 1, 0);
+  let m;
+
+  if ((m = t.match(/^([a-z]{3})[a-z]*[\s\-/]+(?:de\s+)?(\d{2}|\d{4})$/))) {
+    const mes = MESES[m[1]];
+    return mes === undefined ? null : finDeMes(anio(m[2]), mes);
+  }
+  if ((m = t.match(/^(\d{4})-(\d{1,2})(?:-(\d{1,2}))?/))) {
+    return m[3] ? new Date(+m[1], m[2] - 1, +m[3]) : finDeMes(+m[1], m[2] - 1);
+  }
+  if ((m = t.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{2}|\d{4})$/))) {
+    return new Date(anio(m[3]), m[2] - 1, +m[1]);
+  }
+  if ((m = t.match(/^(\d{1,2})[/-](\d{2}|\d{4})$/))) {
+    return finDeMes(anio(m[2]), m[1] - 1);
+  }
+  return null;
+}
+
+// ---------- Armado del inventario ----------
+
+function construirInventario(filas) {
+  if (filas.length < 2) return [];
+  const [encabezados, ...resto] = filas;
+  const col = mapearColumnas(encabezados);
+
+  if (col.articulo === undefined || col.cantidad === undefined) {
+    throw new Error('La hoja debe tener las columnas "Artículo" y "Cantidad".');
+  }
+
+  const valor = (fila, clave) => (col[clave] === undefined ? '' : limpiar(fila[col[clave]]));
+  const grupos = new Map();
+
+  for (const fila of resto) {
+    // Filas sin artículo o sin cantidad están incompletas: no se muestran
+    // (si se contaran como 0 aparecerían como "Agotado" sin serlo).
+    const articulo = valor(fila, 'articulo');
+    const textoCantidad = valor(fila, 'cantidad');
+    if (!articulo || textoCantidad === '') continue;
+
+    const datos = {
+      andamio: valor(fila, 'andamio') || 'Sin andamio',
+      categoria: valor(fila, 'categoria'),
+      articulo,
+      unidad: valor(fila, 'unidad'),
+      contenido: valor(fila, 'contenido'),
+      talla: valor(fila, 'talla'),
+    };
+
+    // Filas del mismo artículo (mismo andamio, presentación y talla) se suman como lotes.
+    const clave = [datos.andamio, articulo, datos.unidad, datos.contenido, datos.talla].map(normalizar).join('|');
+    let item = grupos.get(clave);
+    if (!item) {
+      item = { ...datos, cantidad: 0, minimo: null, lotes: [] };
+      grupos.set(clave, item);
+    }
+
+    const cantidad = leerNumero(textoCantidad);
+    item.cantidad += cantidad;
+
+    const minimo = valor(fila, 'minimo');
+    if (minimo) item.minimo = leerNumero(minimo);
+
+    const fecha = leerFecha(valor(fila, 'vencimiento'));
+    if (fecha && cantidad > 0) item.lotes.push({ cantidad, fecha });
+  }
+
+  return [...grupos.values()].map(evaluar);
+}
+
+function evaluar(item) {
+  const hoy = new Date();
+  hoy.setHours(0, 0, 0, 0);
+
+  // Une lotes con la misma fecha y los ordena del más próximo al más lejano.
+  const porFecha = new Map();
+  for (const lote of item.lotes) {
+    const clave = lote.fecha.getTime();
+    porFecha.set(clave, (porFecha.get(clave) || 0) + lote.cantidad);
+  }
+  item.lotes = [...porFecha.entries()]
+    .sort((a, b) => a[0] - b[0])
+    .map(([tiempo, cantidad]) => ({
+      fecha: new Date(tiempo),
+      cantidad,
+      dias: Math.ceil((tiempo - hoy.getTime()) / 86400000),
+    }));
+
+  const proximo = item.lotes[0];
+  if (item.cantidad <= 0) item.estado = 'agotado';
+  else if (proximo && proximo.dias < 0) item.estado = 'vencido';
+  else if (proximo && proximo.dias <= CONFIG.diasAviso) item.estado = 'por-vencer';
+  else if (item.minimo !== null && item.cantidad < item.minimo) item.estado = 'bajo';
+  else item.estado = 'ok';
+
+  item.nivel = ESTADOS[item.estado].nivel;
+  return item;
+}
+
+// ---------- Carga de datos ----------
+
+function pedirInventario() {
+  if (!enGoogle) return Promise.resolve({ ok: true, usuario: '', filas: DATOS_DEMO });
+  return new Promise((resolver, rechazar) => {
+    google.script.run
+      .withSuccessHandler(resolver)
+      .withFailureHandler(rechazar)
+      .obtenerInventario();
+  });
+}
+
+async function cargar() {
+  try {
+    const respuesta = await pedirInventario();
+    estado.usuario = respuesta.usuario || '';
+    estado.sinAcceso = !respuesta.ok && respuesta.motivo === 'sin-acceso';
+
+    if (respuesta.ok) {
+      estado.items = construirInventario(respuesta.filas);
+      estado.ultimaCarga = new Date();
+      estado.error = null;
+    } else if (!estado.sinAcceso) {
+      throw new Error(respuesta.detalle || 'error desconocido al leer la hoja');
+    }
+  } catch (error) {
+    estado.error = error.message || String(error);
+    console.error('No se pudo leer la hoja de inventario:', error);
+  }
+  pintar();
+}
+
+// ---------- Pintado ----------
+
+function textoDias(dias) {
+  if (dias < 45) return dias === 1 ? '1 día' : `${dias} días`;
+  const meses = Math.round(dias / 30.44);
+  return meses === 1 ? '1 mes' : `${meses} meses`;
+}
+
+function tiempoRestante(dias) {
+  if (dias < 0) return `venció hace ${textoDias(-dias)}`;
+  if (dias === 0) return 'vence hoy';
+  return `vence en ${textoDias(dias)}`;
+}
+
+// Ej.: unidad "L" + contenido "20" → "20 L"; si el contenido ya es texto ("1 unid.", "Rollo"), van separados.
+function detalle(item) {
+  const { unidad, contenido } = item;
+  const presentacion = /^\d+([.,]\d+)?$/.test(contenido) && unidad
+    ? [`${contenido} ${unidad}`]
+    : [unidad, contenido];
+
+  const partes = [...presentacion, item.talla && `Talla ${item.talla}`, item.categoria].filter(Boolean);
+  return [...new Set(partes)].join(' · ');
+}
+
+function etiqueta(item, claseExtra = '') {
+  const { texto, nivel } = ESTADOS[item.estado];
+  const modificador = nivel === 'ok' ? '' : ` etiqueta--${nivel}`;
+  return `<span class="etiqueta${modificador} ${claseExtra}">${texto}</span>`;
+}
+
+function pintarResumen() {
+  const { items } = estado;
+  const lotesPorVencer = items.flatMap((i) => i.lotes).filter((l) => l.dias >= 0 && l.dias <= CONFIG.diasAviso);
+
+  $('kpi-items').textContent = formatoNumero.format(items.length);
+  $('kpi-unidades').textContent = formatoNumero.format(items.reduce((total, i) => total + i.cantidad, 0));
+  $('kpi-por-vencer').textContent = formatoNumero.format(lotesPorVencer.length);
+  $('kpi-peligro').textContent = formatoNumero.format(items.filter((i) => i.nivel === 'peligro').length);
+  $('kpi-meses').textContent = Math.round(CONFIG.diasAviso / 30.44);
+}
+
+function pintarVencimientos() {
+  const MAXIMO = 8;
+  const lotes = estado.items
+    .flatMap((item) => item.lotes.filter((l) => l.dias <= CONFIG.diasAviso).map((l) => ({ item, ...l })))
+    .sort((a, b) => a.dias - b.dias);
+
+  if (!lotes.length) {
+    $('venc-lista').innerHTML = `<li class="venc-vacio">Ningún lote vence en los próximos ${Math.round(CONFIG.diasAviso / 30.44)} meses.</li>`;
+    return;
+  }
+
+  const tarjetas = lotes.slice(0, MAXIMO).map(({ item, fecha, cantidad, dias }) => `
+    <li class="venc${dias < 0 ? ' venc--peligro' : ''}">
+      <p class="venc-nombre">${escapar(item.articulo)}</p>
+      <p class="venc-meta">${escapar(item.andamio)} · ${formatoNumero.format(cantidad)} ${cantidad === 1 ? 'unidad' : 'unidades'} · ${formatoMes.format(fecha)}</p>
+      <p class="venc-cuando">${tiempoRestante(dias)}</p>
+    </li>`);
+
+  if (lotes.length > MAXIMO) tarjetas.push(`<li class="venc-mas">y ${lotes.length - MAXIMO} lotes más…</li>`);
+  $('venc-lista').innerHTML = tarjetas.join('');
+}
+
+function pintarChips() {
+  const andamios = [...new Set(estado.items.map((i) => i.andamio))]
+    .sort((a, b) => a.localeCompare(b, 'es', { numeric: true }));
+
+  if (estado.filtro.andamio !== 'todos' && !andamios.includes(estado.filtro.andamio)) {
+    estado.filtro.andamio = 'todos';
+  }
+
+  // Solo se vuelven a dibujar si cambió la lista de andamios.
+  const firma = andamios.join('|');
+  if (firma === estado.andamiosPintados) return;
+  estado.andamiosPintados = firma;
+
+  $('chips').innerHTML = ['todos', ...andamios].map((a) => `
+    <button type="button" class="chip" data-andamio="${escapar(a)}" aria-pressed="${a === estado.filtro.andamio}">
+      ${a === 'todos' ? 'Todos' : escapar(a)}
+    </button>`).join('');
+}
+
+function pintarAndamios() {
+  const { texto, andamio, soloAlertas } = estado.filtro;
+  const busqueda = normalizar(texto);
+
+  const visibles = estado.items.filter((i) =>
+    (andamio === 'todos' || i.andamio === andamio)
+    && (!soloAlertas || i.nivel !== 'ok')
+    && (!busqueda || normalizar(`${i.articulo} ${i.categoria} ${i.andamio} ${i.talla}`).includes(busqueda)));
+
+  if (!visibles.length) {
+    const mensaje = estado.items.length
+      ? 'No hay insumos que coincidan con el filtro.'
+      : (estado.error ? `No se pudo leer la hoja: ${escapar(estado.error)}.` : 'La hoja de inventario está vacía.');
+    $('andamios').innerHTML = `<p class="vacio">${mensaje}</p>`;
+    return;
+  }
+
+  const grupos = new Map();
+  for (const item of visibles) {
+    if (!grupos.has(item.andamio)) grupos.set(item.andamio, []);
+    grupos.get(item.andamio).push(item);
+  }
+
+  $('andamios').innerHTML = [...grupos.entries()]
+    .sort((a, b) => a[0].localeCompare(b[0], 'es', { numeric: true }))
+    .map(([nombre, items]) => {
+      items.sort((a, b) => a.articulo.localeCompare(b.articulo, 'es') || a.talla.localeCompare(b.talla, 'es'));
+      const alertas = items.filter((i) => i.nivel !== 'ok').length;
+
+      const filas = items.map((item) => {
+        const proximo = item.lotes[0];
+        const otrosLotes = item.lotes.length > 1 ? ` · ${item.lotes.length} lotes` : '';
+        const vence = proximo
+          ? `<span class="venc-fecha">${formatoMes.format(proximo.fecha)}</span><span class="venc-rel">${tiempoRestante(proximo.dias)}${otrosLotes}</span>`
+          : '<span class="venc-rel">—</span>';
+        const textoDetalle = detalle(item);
+
+        return `
+          <tr class="fila--${item.nivel}">
+            <td>
+              <span class="art-nombre">${escapar(item.articulo)}</span>
+              ${textoDetalle ? `<span class="art-detalle">${escapar(textoDetalle)}</span>` : ''}
+              ${etiqueta(item, 'etiqueta-movil')}
+            </td>
+            <td class="col-num"><span class="cantidad">${formatoNumero.format(item.cantidad)}</span></td>
+            <td>${vence}</td>
+            <td class="col-estado">${etiqueta(item)}</td>
+          </tr>`;
+      }).join('');
+
+      return `
+        <article class="andamio">
+          <div class="andamio-cabecera">
+            <h2>${escapar(nombre)}</h2>
+            <p class="andamio-resumen">${items.length} ${items.length === 1 ? 'ítem' : 'ítems'}${alertas ? ` · ${alertas} con alerta` : ''}</p>
+          </div>
+          <table>
+            <thead>
+              <tr>
+                <th scope="col">Artículo</th>
+                <th scope="col" class="col-num">Cant.</th>
+                <th scope="col">Próx. vencimiento</th>
+                <th scope="col" class="col-estado">Estado</th>
+              </tr>
+            </thead>
+            <tbody>${filas}</tbody>
+          </table>
+        </article>`;
+    }).join('');
+}
+
+function pintarSincronizacion() {
+  const sincro = $('sincro');
+  if (estado.error && estado.ultimaCarga) {
+    sincro.dataset.estado = 'error';
+    $('sincro-texto').textContent = `Sin conexión · datos de las ${formatoHora.format(estado.ultimaCarga)}`;
+  } else if (estado.error) {
+    sincro.dataset.estado = 'error';
+    $('sincro-texto').textContent = 'No se pudo leer la hoja';
+  } else if (estado.ultimaCarga) {
+    sincro.dataset.estado = 'ok';
+    $('sincro-texto').textContent = `Actualizado ${formatoHoraSeg.format(estado.ultimaCarga)}`;
+  }
+}
+
+function pintarAcceso() {
+  $('bloqueo').hidden = !estado.sinAcceso;
+  $('contenido').hidden = estado.sinAcceso;
+  $('sincro').hidden = estado.sinAcceso;
+  $('usuario').textContent = estado.usuario ? `Sesión: ${estado.usuario}` : '';
+
+  if (estado.sinAcceso) {
+    $('bloqueo-texto').textContent = estado.usuario
+      ? `La cuenta ${estado.usuario} no tiene permiso para ver el inventario.`
+      : 'Tu cuenta no tiene permiso para ver el inventario.';
+  }
+}
+
+function pintar() {
+  pintarAcceso();
+  if (estado.sinAcceso) return;
+  pintarResumen();
+  pintarVencimientos();
+  pintarChips();
+  pintarAndamios();
+  pintarSincronizacion();
+}
+
+// ---------- Inicio ----------
+
+function iniciar() {
+  $('intervalo').textContent = CONFIG.intervaloSegundos;
+  $('aviso-demo').hidden = Boolean(enGoogle);
+
+  const actualizarReloj = () => { $('reloj').textContent = formatoHora.format(new Date()); };
+  actualizarReloj();
+  setInterval(actualizarReloj, 1000);
+
+  $('buscar').addEventListener('input', (e) => {
+    estado.filtro.texto = e.target.value;
+    pintarAndamios();
+  });
+
+  $('solo-alertas').addEventListener('change', (e) => {
+    estado.filtro.soloAlertas = e.target.checked;
+    pintarAndamios();
+  });
+
+  $('chips').addEventListener('click', (e) => {
+    const chip = e.target.closest('.chip');
+    if (!chip) return;
+    estado.filtro.andamio = chip.dataset.andamio;
+    $('chips').querySelectorAll('.chip').forEach((c) => {
+      c.setAttribute('aria-pressed', c === chip);
+    });
+    pintarAndamios();
+  });
+
+  // Vuelve a leer apenas se regresa a la pestaña (por ejemplo, al encender la TV).
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) cargar();
+  });
+
+  cargar();
+  setInterval(cargar, CONFIG.intervaloSegundos * 1000);
+}
+
+iniciar();
+</script>
