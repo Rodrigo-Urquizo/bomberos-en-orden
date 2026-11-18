@@ -59,6 +59,7 @@ h3 { color: var(--rojo); margin: 0 0 8px; }
 .dos-columnas { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
 .grupos { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 16px; margin-top: 8px; }
 .bloque ul { margin: 0; padding-left: 20px; }
+.bloque-desc { margin: 0 0 10px; font-size: 0.9rem; color: #666; }
 
 .aviso { margin-top: 24px; background: #FFF8D6; border-left: 6px solid var(--dorado); padding: 14px 16px; border-radius: 4px; }
 
