@@ -57,7 +57,7 @@ h3 { color: var(--rojo); margin: 0 0 8px; }
 
 .bloque { background: #fff; border: 1px solid #ddd; border-top: 5px solid var(--rojo); border-radius: 6px; padding: 16px 20px; }
 .dos-columnas { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
-.grupos { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 16px; margin-top: 8px; }
+.grupos { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 16px; margin-top: 8px; }
 .bloque ul { margin: 0; padding-left: 20px; }
 .bloque-desc { margin: 0 0 10px; font-size: 0.9rem; color: #666; }
 
