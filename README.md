@@ -61,6 +61,20 @@ Enlace del panel: https://script.google.com/macros/s/AKfycbw48wmTAxujsvFavjUgJ7_
 
 Las columnas se reconocen por su nombre (Andamio, Categoría, Artículo, Unidad de medida, Contenido, Cantidad, Fecha de expiración, Talla), así que se pueden reordenar. Si se agrega una columna *Stock mínimo*, el panel avisa cuando haya menos de ese mínimo. Un lote se marca *por vencer* si vence en los próximos 180 días (`diasAviso` en `Script.html`).
 
+## Módulo de registro de ingresos (avance)
+
+El botón **+ Registrar ingreso** del panel abre un formulario para anotar insumos **comprados por la compañía** o **donados por la ciudadanía**. Lo usa solo el personal con acceso al panel; la página pública no tiene formularios.
+
+Qué hace al guardar (código en `apps-script/Ingresos.js`):
+
+- Valida los datos: origen (compra o donación), andamio, artículo y cantidad mayor que 0; la fecha de expiración se escribe como `sep-27`. Los insumos médicos deben traer fecha, y no se aceptan lotes vencidos.
+- Si en la hoja ya existe una fila con el mismo andamio, artículo, unidad, contenido, talla y fecha de expiración, **suma la cantidad** a esa fila. Si no, agrega una **fila nueva** al final.
+- Agrega las columnas *Origen*, *Fecha de ingreso* y *Registrado por* a la pestaña de inventario si todavía no existen.
+- Anota cada ingreso en la pestaña **Registro de ingresos** (se crea sola): fecha y hora, quién, origen, artículo, cantidad, proveedor o donante y qué se hizo.
+- Escribe con la cuenta de quien usa el panel. Quien solo puede ver la hoja recibe un aviso y no se registra nada; para dar permiso de registro hay que darle acceso de **editor** en la hoja.
+
+Para publicarlo hay que subir el código a Google con `clasp push` y volver a aceptar los permisos, porque el panel ahora necesita permiso de edición sobre la hoja (antes era solo lectura). El formulario también funciona en la vista previa local con los datos de ejemplo.
+
 ## Colores
 
 Están al inicio de `css/styles.css`, en `:root`: rojo `#C8102E`, dorado `#F2C200` y texto gris oscuro `#333333`.

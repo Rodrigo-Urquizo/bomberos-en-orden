@@ -25,8 +25,9 @@ function incluir(nombre) {
 }
 
 // La llama el panel cada minuto. Devuelve las filas tal como se ven en la hoja.
-// Usa la API de Google Sheets (servicio avanzado "Sheets") porque permite leer
-// con permiso de solo lectura: el panel nunca puede modificar la hoja.
+// Usa la API de Google Sheets (servicio avanzado "Sheets"). Esta función solo lee;
+// lo único que escribe en la hoja es registrarIngreso() (ver Ingresos.js), y solo si
+// la cuenta de quien usa el panel tiene permiso de edición.
 function obtenerInventario() {
   const usuario = Session.getActiveUser().getEmail();
 

@@ -242,6 +242,114 @@ async function cargar() {
   pintar();
 }
 
+// ---------- Registro de ingresos ----------
+
+const MESES_CORTOS = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
+
+// El campo de fecha entrega "2027-09"; la hoja usa "sep-27".
+function mesParaHoja(valor) {
+  const m = String(valor || '').match(/^(\d{4})-(\d{2})$/);
+  return m ? `${MESES_CORTOS[Number(m[2]) - 1]}-${m[1].slice(2)}` : '';
+}
+
+function enviarIngreso(datos) {
+  if (!enGoogle) {
+    // Vista previa local: se agrega a los datos de ejemplo para probar el flujo.
+    DATOS_DEMO.push([
+      datos.andamio, datos.categoria, datos.articulo, datos.unidad, datos.contenido,
+      String(datos.cantidad), datos.vencimiento || '-', datos.talla || '-',
+    ]);
+    return Promise.resolve({ ok: true, accion: 'nuevo', total: datos.cantidad });
+  }
+  return new Promise((resolver, rechazar) => {
+    google.script.run
+      .withSuccessHandler(resolver)
+      .withFailureHandler(rechazar)
+      .registrarIngreso(datos);
+  });
+}
+
+function textoErrorIngreso(respuesta) {
+  if (respuesta.motivo === 'sin-permiso-edicion') {
+    return 'Tu cuenta solo puede ver el inventario. Pide permiso de edición en la hoja para registrar ingresos.';
+  }
+  return respuesta.detalle || 'No se pudo registrar el ingreso.';
+}
+
+// Ofrece como sugerencias lo que ya existe en la hoja, para no escribir el mismo nombre de varias formas.
+function llenarSugerencias() {
+  const unicos = (lista) => [...new Set(lista.filter(Boolean))].sort((a, b) => a.localeCompare(b, 'es'));
+  const poner = (id, valores) => {
+    $(id).innerHTML = valores.map((v) => `<option value="${escapar(v)}"></option>`).join('');
+  };
+  poner('lista-articulos', unicos(estado.items.map((i) => i.articulo)));
+  poner('lista-andamios', unicos(estado.items.map((i) => i.andamio)));
+  poner('lista-categorias', unicos(estado.items.map((i) => i.categoria)));
+}
+
+function iniciarIngresos() {
+  const dialogo = $('dlg-ingreso');
+  const formulario = $('form-ingreso');
+  const mensaje = $('ing-mensaje');
+  const guardar = $('ing-guardar');
+
+  const avisar = (texto, tipo) => {
+    mensaje.textContent = texto;
+    mensaje.dataset.tipo = tipo || '';
+  };
+
+  $('btn-ingreso').addEventListener('click', () => {
+    formulario.reset();
+    avisar('');
+    llenarSugerencias();
+    dialogo.showModal();
+    formulario.elements.articulo.focus();
+  });
+
+  $('ing-cancelar').addEventListener('click', () => dialogo.close());
+
+  formulario.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const campos = new FormData(formulario);
+    const datos = Object.fromEntries(campos.entries());
+    datos.vencimiento = mesParaHoja(datos.vencimiento);
+    datos.cantidad = Number(String(datos.cantidad).replace(',', '.'));
+
+    if (!datos.articulo.trim() || !datos.andamio.trim() || !(datos.cantidad > 0)) {
+      avisar('Completa artículo, andamio y una cantidad mayor que 0.', 'error');
+      return;
+    }
+
+    guardar.disabled = true;
+    avisar('Guardando…');
+    try {
+      const respuesta = await enviarIngreso(datos);
+      if (!respuesta.ok) {
+        avisar(textoErrorIngreso(respuesta), 'error');
+      } else {
+        const que = respuesta.accion === 'suma'
+          ? `Sumado al stock existente. Ahora hay ${formatoNumero.format(respuesta.total)}.`
+          : 'Ingreso registrado como fila nueva.';
+        avisar(que, 'ok');
+        // Deja el formulario listo para el siguiente artículo, conservando el origen.
+        formulario.elements.articulo.value = '';
+        formulario.elements.cantidad.value = '';
+        formulario.elements.contenido.value = '';
+        formulario.elements.talla.value = '';
+        formulario.elements.vencimiento.value = '';
+        formulario.elements.nota.value = '';
+        formulario.elements.articulo.focus();
+        cargar();
+      }
+    } catch (error) {
+      console.error('No se pudo registrar el ingreso:', error);
+      avisar('No se pudo registrar el ingreso. Inténtalo de nuevo.', 'error');
+    } finally {
+      guardar.disabled = false;
+    }
+  });
+}
+
 // ---------- Pintado ----------
 
 function textoDias(dias) {
@@ -442,6 +550,8 @@ function iniciar() {
   const actualizarReloj = () => { $('reloj').textContent = formatoHora.format(new Date()); };
   actualizarReloj();
   setInterval(actualizarReloj, 1000);
+
+  iniciarIngresos();
 
   $('buscar').addEventListener('input', (e) => {
     estado.filtro.texto = e.target.value;

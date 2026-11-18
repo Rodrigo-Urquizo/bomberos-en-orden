@@ -15,6 +15,7 @@
       <h1>Panel de inventario</h1>
     </div>
     <div class="barra-estado">
+      <button type="button" class="boton-ingreso" id="btn-ingreso">+ Registrar ingreso</button>
       <p class="reloj" id="reloj">--:--</p>
       <p class="sincro" id="sincro"><span class="sincro-punto"></span><span id="sincro-texto">Cargando…</span></p>
     </div>
@@ -75,6 +76,63 @@
     Se actualiza cada <span id="intervalo">60</span> segundos ·
     <a href="https://rodrigo-urquizo.github.io/bomberos-en-orden/">Página de la compañía</a>
   </footer>
+
+  <dialog class="dialogo" id="dlg-ingreso" aria-labelledby="ing-titulo">
+    <form id="form-ingreso" autocomplete="off" novalidate>
+      <h2 id="ing-titulo">Registrar ingreso de insumos</h2>
+      <p class="dialogo-ayuda">Compras de la compañía o donaciones de la ciudadanía. Si el artículo ya existe con la misma presentación, talla y fecha de expiración, la cantidad se suma sola; si no, se crea una fila nueva.</p>
+
+      <fieldset class="origen">
+        <legend>Origen</legend>
+        <label><input type="radio" name="origen" value="Donación" checked> Donación</label>
+        <label><input type="radio" name="origen" value="Compra"> Compra</label>
+      </fieldset>
+
+      <div class="campos">
+        <label class="campo campo--ancho">Artículo *
+          <input name="articulo" list="lista-articulos" maxlength="100" required>
+        </label>
+        <label class="campo">Andamio *
+          <input name="andamio" list="lista-andamios" maxlength="60" required>
+        </label>
+        <label class="campo">Categoría
+          <input name="categoria" list="lista-categorias" maxlength="60">
+        </label>
+        <label class="campo">Cantidad *
+          <input name="cantidad" type="number" min="0.01" step="any" inputmode="decimal" required>
+        </label>
+        <label class="campo">Unidad de medida
+          <input name="unidad" maxlength="20" placeholder="Caja, L, Par…">
+        </label>
+        <label class="campo">Contenido
+          <input name="contenido" maxlength="40" placeholder="100 unid., 500 mL…">
+        </label>
+        <label class="campo">Talla
+          <input name="talla" maxlength="20" placeholder="M, L, 42…">
+        </label>
+        <label class="campo">Fecha de expiración
+          <input name="vencimiento" type="month">
+        </label>
+        <label class="campo">Proveedor o donante
+          <input name="contraparte" maxlength="100" placeholder="Opcional">
+        </label>
+        <label class="campo campo--ancho">Nota
+          <input name="nota" maxlength="200" placeholder="Opcional">
+        </label>
+      </div>
+
+      <p class="dialogo-ayuda">Los insumos médicos deben traer fecha de expiración y estar sellados y vigentes. No se registran lotes vencidos.</p>
+      <p class="dialogo-mensaje" id="ing-mensaje" role="status" aria-live="polite"></p>
+
+      <div class="dialogo-botones">
+        <button type="button" class="boton-secundario" id="ing-cancelar">Cancelar</button>
+        <button type="submit" class="boton-principal" id="ing-guardar">Guardar ingreso</button>
+      </div>
+    </form>
+    <datalist id="lista-articulos"></datalist>
+    <datalist id="lista-andamios"></datalist>
+    <datalist id="lista-categorias"></datalist>
+  </dialog>
 
   <?!= incluir('Script'); ?>
 </body>
